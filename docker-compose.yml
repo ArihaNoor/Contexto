@@ -1,0 +1,15 @@
+services:
+  contexto:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      HUGGINGFACEHUB_API_TOKEN: ${HUGGINGFACEHUB_API_TOKEN:?set it in .env}
+      LLM_MODEL: ${LLM_MODEL:-meta-llama/Llama-3.1-8B-Instruct}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - chroma-data:/data/chroma_db
+    restart: unless-stopped
+
+volumes:
+  chroma-data:

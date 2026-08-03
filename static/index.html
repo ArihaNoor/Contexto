@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Contexto — Deep document understanding, simplified</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📄</text></svg>" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-icon">📄</span>
+      <div>
+        <h1>Contexto</h1>
+        <p>Deep document understanding, simplified.</p>
+      </div>
+    </div>
+    <div id="session-badge" class="session-badge hidden">
+      <span id="doc-name" class="doc-name"></span>
+      <span id="doc-chunks" class="doc-chunks"></span>
+      <button id="clear-btn" class="btn-clear" title="Remove document and start over">✕ New document</button>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- Upload view -->
+    <section id="upload-view" class="upload-view">
+      <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload a PDF">
+        <div class="dropzone-inner">
+          <div class="dropzone-icon">⬆️</div>
+          <p class="dropzone-title">Drop your PDF here</p>
+          <p class="dropzone-sub">or <span class="link">browse files</span> — max 20 MB</p>
+        </div>
+        <div id="upload-progress" class="upload-progress hidden">
+          <div class="spinner"></div>
+          <p id="upload-status">Uploading &amp; indexing…</p>
+        </div>
+      </div>
+      <input type="file" id="file-input" accept=".pdf,application/pdf" hidden />
+      <p id="upload-error" class="error-msg hidden"></p>
+    </section>
+
+    <!-- Chat view -->
+    <section id="chat-view" class="chat-view hidden">
+      <div id="messages" class="messages"></div>
+      <form id="chat-form" class="chat-form" autocomplete="off">
+        <textarea id="chat-input" rows="1" placeholder="Ask a question about your document…" required></textarea>
+        <button type="submit" id="send-btn" class="btn-send" title="Send">➤</button>
+      </form>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

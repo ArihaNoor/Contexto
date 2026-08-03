@@ -1,0 +1,24 @@
+# Environment / secrets
+.env
+.env.local
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local vector store (regenerated on ingest)
+chroma_db/
+
+# Model cache
+.cache/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
