@@ -1,5 +1,7 @@
 """End-to-end API tests covering the ingest -> query -> clear lifecycle."""
 
+import json
+
 import pytest
 
 from app.config import settings
@@ -179,6 +181,82 @@ def test_sessions_are_isolated_from_each_other(client, sample_pdf):
     excerpts = " ".join(source["excerpt"] for source in response.json()["sources"])
     assert "marine biology" in excerpts
     assert "FastAPI" not in excerpts
+
+
+def parse_sse(text: str) -> list[tuple[str, dict]]:
+    events = []
+    for block in text.strip().split("\n\n"):
+        lines = block.splitlines()
+        if len(lines) < 2:
+            continue
+        events.append(
+            (lines[0].removeprefix("event: "), json.loads(lines[1].removeprefix("data: ")))
+        )
+    return events
+
+
+def test_stream_emits_sources_then_tokens_then_done(client, sample_pdf):
+    session_id = ingest(client, sample_pdf).json()["session_id"]
+
+    response = client.post(
+        "/api/v1/context/query/stream",
+        json={"session_id": session_id, "query": "What is Contexto?"},
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+
+    events = parse_sse(response.text)
+    names = [name for name, _ in events]
+
+    assert names[0] == "sources", "citations must arrive before generation"
+    assert names[-1] == "done"
+    assert names.count("token") > 1, "expected an incremental token stream"
+
+    assert events[0][1]["sources"], "sources event should carry citations"
+    streamed = "".join(data["t"] for name, data in events if name == "token")
+    assert streamed.strip() == FAKE_ANSWER
+
+
+def test_stream_commits_the_answer_to_chat_memory(client, sample_pdf, fake_llm):
+    from app.services import memory
+
+    session_id = ingest(client, sample_pdf).json()["session_id"]
+    client.post(
+        "/api/v1/context/query/stream",
+        json={"session_id": session_id, "query": "What is Contexto?"},
+    )
+
+    history = [m.content for m in memory.get_history(session_id).messages]
+    assert history == ["What is Contexto?", FAKE_ANSWER]
+
+
+def test_stream_rejects_unknown_session(client):
+    response = client.post(
+        "/api/v1/context/query/stream",
+        json={"session_id": "nope", "query": "hi"},
+    )
+    assert response.status_code == 404
+
+
+def test_stream_reports_provider_failure_as_an_error_event(
+    client, sample_pdf, monkeypatch
+):
+    session_id = ingest(client, sample_pdf).json()["session_id"]
+
+    def boom(messages):
+        raise llm.LLMError("provider is down")
+        yield  # pragma: no cover - makes this a generator function
+
+    monkeypatch.setattr(llm, "stream", boom)
+
+    response = client.post(
+        "/api/v1/context/query/stream",
+        json={"session_id": session_id, "query": "anything"},
+    )
+    # The status line is already sent, so failures ride the stream instead.
+    assert response.status_code == 200
+    events = parse_sse(response.text)
+    assert ("error", {"detail": "provider is down"}) in events
 
 
 def test_clear_removes_session_and_memory(client, sample_pdf):

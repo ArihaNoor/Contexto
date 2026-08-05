@@ -166,6 +166,14 @@ body {
 
 .msg.bot.error { border-color: var(--danger); color: var(--danger); }
 
+/* Blinking caret while tokens are still streaming in */
+.msg.bot.streaming .answer-body::after {
+  content: "▍";
+  color: var(--accent);
+  animation: blink 1s steps(2, start) infinite;
+}
+@keyframes blink { to { visibility: hidden; } }
+
 .msg.system {
   align-self: center;
   background: none;

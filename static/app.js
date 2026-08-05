@@ -155,14 +155,14 @@ async function sendQuery() {
 
   addMessage("user", query);
   const typing = addTyping();
+  let bubble = null;
 
   try {
-    const res = await fetch(`${API_BASE}/query`, {
+    const res = await fetch(`${API_BASE}/query/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ session_id: sessionId, query }),
     });
-    const data = await parseJson(res);
 
     if (res.status === 404) {
       // Session expired / server restarted
@@ -171,17 +171,68 @@ async function sendQuery() {
       setTimeout(resetToUpload, 1800);
       return;
     }
-    if (!res.ok) throw new Error(data?.detail || `Request failed (${res.status})`);
+    if (!res.ok) {
+      const data = await parseJson(res);
+      throw new Error(data?.detail || `Request failed (${res.status})`);
+    }
 
-    typing.remove();
-    addAnswer(data.answer, data.sources || []);
+    let streamError = null;
+
+    for await (const [event, data] of readEvents(res)) {
+      if (event === "sources") {
+        typing.remove();
+        bubble = startAnswer(data.sources || []);
+      } else if (event === "token") {
+        if (!bubble) bubble = startAnswer([]);
+        bubble.append(data.t);
+      } else if (event === "error") {
+        streamError = data.detail;
+        break;
+      }
+    }
+
+    if (streamError) throw new Error(streamError);
+    if (bubble) bubble.finish();
   } catch (err) {
     typing.remove();
+    if (bubble) bubble.finish();
     addMessage("bot error", err.message || "Something went wrong. Please try again.");
   } finally {
     busy = false;
     sendBtn.disabled = false;
     chatInput.focus();
+  }
+}
+
+/** Parse a `text/event-stream` body into [eventName, data] pairs. */
+async function* readEvents(res) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    let split;
+    while ((split = buffer.indexOf("\n\n")) !== -1) {
+      const block = buffer.slice(0, split);
+      buffer = buffer.slice(split + 2);
+
+      let name = "message";
+      let payload = null;
+      for (const line of block.split("\n")) {
+        if (line.startsWith("event: ")) name = line.slice(7);
+        else if (line.startsWith("data: ")) payload = line.slice(6);
+      }
+      if (payload === null) continue;
+      try {
+        yield [name, JSON.parse(payload)];
+      } catch {
+        /* ignore malformed frame */
+      }
+    }
   }
 }
 
@@ -227,35 +278,57 @@ function addSystemMessage(text) {
   return addMessage("system", text);
 }
 
-function addAnswer(answer, sources) {
+/**
+ * Create an answer bubble that fills in as tokens arrive.
+ * Citations render immediately — they are known before generation starts.
+ */
+function startAnswer(sources) {
   const div = document.createElement("div");
-  div.className = "msg bot";
-  div.textContent = answer;
+  div.className = "msg bot streaming";
+
+  const body = document.createElement("span");
+  body.className = "answer-body";
+  div.appendChild(body);
 
   if (sources.length) {
-    const details = document.createElement("details");
-    details.className = "sources";
-    const summary = document.createElement("summary");
-    summary.textContent = `📎 ${sources.length} source${sources.length > 1 ? "s" : ""}`;
-    details.appendChild(summary);
-
-    for (const src of sources) {
-      const item = document.createElement("div");
-      item.className = "source-item";
-      const page = document.createElement("span");
-      page.className = "source-page";
-      page.textContent = `Page ${src.page}`;
-      const excerpt = document.createElement("div");
-      excerpt.className = "source-excerpt";
-      excerpt.textContent = src.excerpt;
-      item.append(page, excerpt);
-      details.appendChild(item);
-    }
-    div.appendChild(details);
+    div.appendChild(buildSources(sources));
   }
 
   messagesEl.appendChild(div);
   scrollToBottom();
+
+  return {
+    append(text) {
+      body.textContent += text;
+      scrollToBottom();
+    },
+    finish() {
+      div.classList.remove("streaming");
+      if (!body.textContent) body.textContent = "(no answer returned)";
+    },
+  };
+}
+
+function buildSources(sources) {
+  const details = document.createElement("details");
+  details.className = "sources";
+  const summary = document.createElement("summary");
+  summary.textContent = `📎 ${sources.length} source${sources.length > 1 ? "s" : ""}`;
+  details.appendChild(summary);
+
+  for (const src of sources) {
+    const item = document.createElement("div");
+    item.className = "source-item";
+    const page = document.createElement("span");
+    page.className = "source-page";
+    page.textContent = `Page ${src.page}`;
+    const excerpt = document.createElement("div");
+    excerpt.className = "source-excerpt";
+    excerpt.textContent = src.excerpt;
+    item.append(page, excerpt);
+    details.appendChild(item);
+  }
+  return details;
 }
 
 function addTyping() {

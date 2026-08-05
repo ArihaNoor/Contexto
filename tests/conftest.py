@@ -35,7 +35,9 @@ def build_pdf(pages: list[str]) -> bytes:
     kids = []
     for text in pages:
         escaped = text.replace("\\", r"\\").replace("(", r"\(").replace(")", r"\)")
-        stream = f"BT /F1 12 Tf 72 720 Td ({escaped}) Tj ET".encode("latin-1")
+        # WinAnsi/Helvetica is a single-byte encoding; drop anything outside it.
+        body = escaped.encode("latin-1", errors="replace").decode("latin-1")
+        stream = f"BT /F1 12 Tf 72 720 Td ({body}) Tj ET".encode("latin-1")
         content_num = add(
             b"<< /Length %d >>\nstream\n%s\nendstream" % (len(stream), stream)
         )
@@ -106,14 +108,20 @@ def clean_memory():
 
 @pytest.fixture()
 def fake_llm(monkeypatch):
-    """Replace the provider call and record the messages it receives."""
+    """Replace both provider calls and record the messages they receive."""
     calls: list[list[dict]] = []
 
     def _generate(messages: list[dict]) -> str:
         calls.append(messages)
         return FAKE_ANSWER
 
+    def _stream(messages: list[dict]):
+        calls.append(messages)
+        for word in FAKE_ANSWER.split(" "):
+            yield word + " "
+
     monkeypatch.setattr(llm, "generate", _generate)
+    monkeypatch.setattr(llm, "stream", _stream)
     return calls
 
 
